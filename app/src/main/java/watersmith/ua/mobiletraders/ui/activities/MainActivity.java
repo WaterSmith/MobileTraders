@@ -1,27 +1,61 @@
 package watersmith.ua.mobiletraders.ui.activities;
 
 import android.os.Bundle;
+import android.os.HandlerThread;
+import android.os.Looper;
 import android.support.design.widget.FloatingActionButton;
-import android.support.design.widget.Snackbar;
-import android.view.View;
 import android.support.design.widget.NavigationView;
 import android.support.v4.view.GravityCompat;
 import android.support.v4.widget.DrawerLayout;
 import android.support.v7.app.ActionBarDrawerToggle;
 import android.support.v7.app.AppCompatActivity;
 import android.support.v7.widget.Toolbar;
+import android.util.Log;
 import android.view.Menu;
 import android.view.MenuItem;
+import android.view.View;
 
+import java.util.concurrent.TimeUnit;
+
+import rx.Observable;
+import rx.Subscriber;
+import rx.android.schedulers.AndroidSchedulers;
+import rx.exceptions.OnErrorThrowable;
+import rx.functions.Func0;
 import watersmith.ua.mobiletraders.R;
+import watersmith.ua.mobiletraders.data.storage.entity.DaoMaster;
+import watersmith.ua.mobiletraders.data.storage.entity.DaoSession;
+import watersmith.ua.mobiletraders.data.storage.entity.Good;
+import watersmith.ua.mobiletraders.data.storage.entity.GoodDao;
+
+import static android.os.Process.THREAD_PRIORITY_BACKGROUND;
 
 public class MainActivity extends AppCompatActivity
         implements NavigationView.OnNavigationItemSelectedListener {
 
+    private static String TAG = "MainActivity";
+
+    private Looper backgroundLooper;
+
+    Observable<String> myObservable = Observable.create(
+            new Observable.OnSubscribe<String>() {
+                @Override
+                public void call(Subscriber<? super String> sub) {
+                    sub.onNext("Hello, world!");
+                    sub.onCompleted();
+                }
+            }
+    );
+
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
+
         setContentView(R.layout.activity_main);
+        BackgroundThread backgroundThread = new BackgroundThread();
+        backgroundThread.start();
+        backgroundLooper = backgroundThread.getLooper();
+
         Toolbar toolbar = (Toolbar) findViewById(R.id.toolbar);
         setSupportActionBar(toolbar);
 
@@ -29,8 +63,18 @@ public class MainActivity extends AppCompatActivity
         fab.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View view) {
-                Snackbar.make(view, "Replace with your own action", Snackbar.LENGTH_LONG)
-                        .setAction("Action", null).show();
+                Good good = new Good();
+                good.setDatabaseId(1259);
+                good.setIsFolder(false);
+                good.setName("просто еще один товар");
+                //GoodDao gd = new GoodDao();
+                DaoSession daoSession = DaoMaster.newDevSession(getApplicationContext(),"mainDatabase");
+                GoodDao gd = (GoodDao) daoSession.getDao(Good.class);
+                gd.insertOrReplace(good);
+                //daoSession.update(good);
+                //onRunSchedulerExampleButtonClicked();
+                //Snackbar.make(view, "Replace with your own action", Snackbar.LENGTH_LONG)
+                //        .setAction("Action", null).show();
             }
         });
 
@@ -42,6 +86,27 @@ public class MainActivity extends AppCompatActivity
 
         NavigationView navigationView = (NavigationView) findViewById(R.id.nav_view);
         navigationView.setNavigationItemSelectedListener(this);
+    }
+
+    void onRunSchedulerExampleButtonClicked() {
+        sampleObservable()
+                // Run on a background thread
+                .subscribeOn(AndroidSchedulers.from(backgroundLooper))
+                // Be notified on the main thread
+                .observeOn(AndroidSchedulers.mainThread())
+                .subscribe(new Subscriber<String>() {
+                    @Override public void onCompleted() {
+                        Log.d(TAG, "onCompleted()");
+                    }
+
+                    @Override public void onError(Throwable e) {
+                        Log.e(TAG, "onError()", e);
+                    }
+
+                    @Override public void onNext(String string) {
+                        Log.d(TAG, "onNext(" + string + ")");
+                    }
+                });
     }
 
     /** Перехватывает нажатие кнопки "Назад"
@@ -102,5 +167,25 @@ public class MainActivity extends AppCompatActivity
         DrawerLayout drawer = (DrawerLayout) findViewById(R.id.drawer_layout);
         drawer.closeDrawer(GravityCompat.START);
         return true;
+    }
+
+    static Observable<String> sampleObservable() {
+        return Observable.defer(new Func0<Observable<String>>() {
+            @Override public Observable<String> call() {
+                try {
+                    // Do some long running operation
+                    Thread.sleep(TimeUnit.SECONDS.toMillis(5));
+                } catch (InterruptedException e) {
+                    throw OnErrorThrowable.from(e);
+                }
+                return Observable.just("one", "two", "three", "four", "five");
+            }
+        });
+    }
+
+    static class BackgroundThread extends HandlerThread {
+        BackgroundThread() {
+            super("SchedulerSample-BackgroundThread", THREAD_PRIORITY_BACKGROUND);
+        }
     }
 }
